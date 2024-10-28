@@ -199,17 +199,17 @@
 #define PRINT_USE_TEXT				TRUE	// Allow use of Text font (T1-T2, G1-G3)
 #define PRINT_USE_BITMAP			TRUE	// Allow use of Bitmap font (G4-G7)
 #define PRINT_USE_VRAM				TRUE	// Allow use of VRAM stored font (G4-G7)
-#define PRINT_USE_SPRITE			TRUE	// Allow use of Sprite font (G3-G7)
-#define PRINT_USE_FX_SHADOW			TRUE	// [Bitmap] Allow use of text shadow
-#define PRINT_USE_FX_OUTLINE		TRUE	// [Bitmap] Allow use of text outline
+#define PRINT_USE_SPRITE			FALSE	// Allow use of Sprite font (G3-G7)
+#define PRINT_USE_FX_SHADOW			FALSE	// [Bitmap] Allow use of text shadow
+#define PRINT_USE_FX_OUTLINE		FALSE	// [Bitmap] Allow use of text outline
 #define PRINT_USE_2_PASS_FX			FALSE	// [Bitmap] Allow use 2-pass FX render to prevent character overlap
 #define PRINT_USE_GRAPH				TRUE	// Allow use of character lines and boxes
 #define PRINT_USE_VALIDATOR			TRUE	// Add validator character code
-#define PRINT_USE_UNIT				FALSE	// Display integer type (h: hexadecimal, b: binary)
-#define PRINT_USE_FORMAT			TRUE	// Add printf type function
-#define PRINT_USE_32B				TRUE	// Allow to print 32-bits integers
-#define PRINT_SKIP_SPACE			TRUE	// Skill space character
-#define PRINT_COLOR_NUM				12		// 1 color per line
+#define PRINT_USE_UNIT				TRUE	// Display integer type (h: hexadecimal, b: binary)
+#define PRINT_USE_FORMAT			FALSE	// Add printf type function
+#define PRINT_USE_32B				FALSE	// Allow to print 32-bits integers
+#define PRINT_SKIP_SPACE			FALSE	// Skill space character
+#define PRINT_COLOR_NUM				1		// 1 color per line
 // Character width
 // - PRINT_WIDTH_1 (text mode)
 // - PRINT_WIDTH_6
@@ -286,22 +286,22 @@
 //-----------------------------------------------------------------------------
 
 #define MENU_USE_DEFAULT_CALLBACK	TRUE	// Use default input/print callback
-#define MENU_SCREEN_WIDTH			MENU_VARIABLE		// Screen width
+#define MENU_SCREEN_WIDTH			80		// Screen width
 #define MENU_FRAME_X				0		// Frame position X
-#define MENU_FRAME_Y				6		// Frame position Y
+#define MENU_FRAME_Y				2		// Frame position Y
 #define MENU_FRAME_WIDTH			32		// Frame width
-#define MENU_FRAME_HEIGHT			8		// Frame height
-#define MENU_CHAR_CLEAR				'\0'	// Clear character
-#define MENU_CHAR_CURSOR			'@'		// Cursor character
-#define MENU_CHAR_TRUE				'O'		// True character
-#define MENU_CHAR_FALSE				'X'		// False character
-#define MENU_CHAR_LEFT				'<'		// Left edit character
-#define MENU_CHAR_RIGHT				'>'		// Right edit character
-#define MENU_TITLE_X				4		// Title position X
-#define MENU_TITLE_Y				6		// Title position Y
-#define MENU_ITEM_X					6		// Item label X position
-#define MENU_ITEM_Y					8		// Item label X position
-#define MENU_ITEM_X_GOTO			6		// Goto type item label X position
+#define MENU_FRAME_HEIGHT			16		// Frame height
+#define MENU_CHAR_CLEAR				' '		// Clear character
+#define MENU_CHAR_CURSOR			138		// Cursor character
+#define MENU_CHAR_TRUE				12		// True character
+#define MENU_CHAR_FALSE				11		// False character
+#define MENU_CHAR_LEFT				129		// Left edit character
+#define MENU_CHAR_RIGHT				128		// Right edit character
+#define MENU_TITLE_X				0		// Title position X
+#define MENU_TITLE_Y				0		// Title position Y
+#define MENU_ITEM_X					3		// Item label X position
+#define MENU_ITEM_Y					3		// Item label X position
+#define MENU_ITEM_X_GOTO			3		// Goto type item label X position
 #define MENU_ITEM_ALIGN				MENU_ITEM_ALIGN_LEFT // Item label alignment
 #define MENU_ITEM_ALIGN_GOTO		MENU_ITEM_ALIGN_LEFT // Goto type item label alignment
 #define MENU_VALUE_X				14		// Item value X position
