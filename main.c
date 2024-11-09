@@ -13,6 +13,7 @@
 #include "fsm.h"
 #include "game_menu.h"
 #include "device/jsx.h"
+#include "device/msx-hid.h"
 
 //=============================================================================
 // DEFINES
@@ -20,6 +21,7 @@
 
 // Library's logo
 #define MSX_GL			"\x01\x02\x03\x04\x05\x06"
+#define APP_VERSION		"0.7"
 #define SCREEN_W		512
 #define OUTPUT_Y		18
 #define INPUT_Y			95
@@ -35,22 +37,31 @@ struct InputPin
 
 // Function prototypes
 const c8* MenuAction_Start(u8 op, i8 value);
-const c8* MenuAction_SelectPort(u8 op, i8 value);
+const c8* MenuAction_Read(u8 op, i8 value);
+const c8* MenuAction_Port(u8 op, i8 value);
+const c8* MenuAction_Time(u8 op, i8 value);
+const c8* MenuAction_Pin(u8 op, i8 value);
+void Menu_InitMain();
+void Menu_InitReader();
 
 // State function prototypes
 void State_Menu_Init();
 void State_Menu_Update();
 void State_Driver_Init();
 void State_Driver_Update();
+void State_DriverC_Init();
+void State_DriverC_Update();
 void State_Sniffer_Init();
 void State_Sniffer_Update();
+void State_Detect_Init();
+void State_Detect_Update();
+
+// External data
+extern const u8 g_Font_MGL_Sample6[];
 
 //=============================================================================
 // READ-ONLY DATA
 //=============================================================================
-
-// Fonts data
-#include "font/font_mgl_sample6.h"
 
 //-----------------------------------------------------------------------------
 // R#14   I/O Parallel Port A (ready)
@@ -118,30 +129,107 @@ const u8 g_CursorPattern[8] =
 };
 
 // 
-enum MENU
+enum MENU_ID
 {
 	MENU_MAIN = 0,
-	MENU_DRIVER,
+	MENU_READER,
 	MENU_MAX,
 };
 
 // Entries description for the Main menu
 const MenuItem g_MenuMain[] =
 {
-	{ "Driver",  MENU_ITEM_ACTION, MenuAction_Start, 0 },
-	{ "Sniffer", MENU_ITEM_ACTION, MenuAction_Start, 1 },
+	{ "Driver (A)", MENU_ITEM_ACTION, MenuAction_Start, 0 },
+	{ "Driver (C)", MENU_ITEM_ACTION, MenuAction_Start, 1 },
+	{ "Detect",     MENU_ITEM_ACTION, MenuAction_Start, 3 },
+	{ "Sniffer",    MENU_ITEM_ACTION, MenuAction_Start, 2 },
+	{ "Reader",		MENU_ITEM_GOTO, NULL, MENU_READER },
+};
+
+enum PIN_STATE
+{
+	PIN_LOW = 0,
+	PIN_HIGH,
+	PIN_PULSE,
+	PIN_MAX,
+};
+
+enum READ_TIME
+{
+	READ_TIME_32TT = 0,
+	READ_TIME_37TT,
+	READ_TIME_42TT,
+	READ_TIME_47TT,
+	READ_TIME_52TT,
+	READ_TIME_MAX,
+};
+
+const u8* g_ReadPinState[PIN_MAX] = 
+{
+	"LOW",
+	"HIGH",
+	"PULSE",
+};
+
+const u8* g_ReadTimeText[READ_TIME_MAX] = 
+{
+	"32 TT (8.9 us)",
+	"37 TT (10.3 us)",
+	"42 TT (11.7 us)",
+	"47 TT (13.1 us)",
+	"52 TT (14.5 us)",
+};
+
+const u8 g_ReadPinBit[2][3] = 
+{
+	{
+		0b00000001, // Pin 6
+		0b00000010, // Pin 7
+		0b00010000, // Pin 8
+	},
+	{
+		0b00000100, // Pin 6
+		0b00001000, // Pin 7
+		0b00100000, // Pin 8
+	},
+};
+
+u8 g_ReadPort = 0;
+u8 g_ReadCount = 4;
+u8 g_ReadTiming = 0;
+u8 g_ReadPinConfig[3] = { PIN_HIGH, PIN_HIGH, PIN_PULSE };
+u8 g_ReadPinValue[2] = { 0, 0 };
+
+const MenuItemMinMax g_MenuReadCountMinMax = { 1, 16, 1 };
+
+// Entries description for the Main menu
+const MenuItem g_MenuReader[] =
+{
+	{ "Start",		MENU_ITEM_ACTION, MenuAction_Read, 0 },
+	{ NULL,			MENU_ITEM_EMPTY, NULL, 0 },
+	{ "Port",		MENU_ITEM_ACTION, MenuAction_Port, 0 },
+	{ "Counter",	MENU_ITEM_INT, &g_ReadCount, (i16)&g_MenuReadCountMinMax },
+	{ "Timing",		MENU_ITEM_ACTION, MenuAction_Time, 0 },
+	{ "Pin 6",		MENU_ITEM_ACTION, MenuAction_Pin, 0 },
+	{ "Pin 7",		MENU_ITEM_ACTION, MenuAction_Pin, 1 },
+	{ "Pin 8",		MENU_ITEM_ACTION, MenuAction_Pin, 2 },
+	{ NULL,			MENU_ITEM_EMPTY, NULL, 0 },
+	{ "Back",		MENU_ITEM_GOTO, NULL, MENU_MAIN },
 };
 
 // List of all menus
 const Menu g_Menus[MENU_MAX] =
 {
-	{ "", g_MenuMain, numberof(g_MenuMain), NULL },
+	{ "", g_MenuMain,   numberof(g_MenuMain),   Menu_InitMain },
+	{ "", g_MenuReader, numberof(g_MenuReader), Menu_InitReader },
 };
 
 //
 const FSM_State g_StateMenu    = { 0, State_Menu_Init,     State_Menu_Update,    NULL };
 const FSM_State g_StateDriver  = { 0, State_Driver_Init,   State_Driver_Update,  NULL };
+const FSM_State g_StateDriverC = { 0, State_DriverC_Init,  State_DriverC_Update,  NULL };
 const FSM_State g_StateSniffer = { 0, State_Sniffer_Init,  State_Sniffer_Update, NULL };
+const FSM_State g_StateDetect  = { 0, State_Detect_Init,   State_Detect_Update,  NULL };
 
 //=============================================================================
 // VARIABLES
@@ -184,6 +272,151 @@ void WaitVBlank()
 	while(g_VBlank == 0) {}
 	g_VBlank = 0;
 	g_Frame++;
+}
+
+//-----------------------------------------------------------------------------
+//
+// INPUT_PORT1_HIGH			0b00010011
+// INPUT_PORT2_HIGH			0b01101100
+void ReadInputData(u8 time)
+{
+	time; // A
+__asm
+	// Setup jump index
+	rlca							// A *= 2
+	ld		l, a
+	ld		h, #0
+	ld		de, #read_jump_table
+	add		hl, de
+	push	hl
+	pop		iy
+
+	// Initialize parameters
+	ld		hl, (_g_ReadPinValue)
+	ld		a, (_g_ReadCount)
+	ld		b, a
+	ld		de, #_g_Buffer
+
+	di
+	jp		(iy)
+
+read_jump_table:
+	jr		read_32tt_loop
+	jr		read_37tt_loop
+	jr		read_42tt_loop
+	jr		read_47tt_loop
+	jr		read_52tt_loop
+
+read_32tt_loop: // 8.9 μs
+	ld		a, #15
+	out		(P_PSG_REGS), a			// Select R#15
+	ld		a, l
+	out		(P_PSG_DATA), a			// Set LOW
+	ld		a, h
+	out		(P_PSG_DATA), a			// Set HIGH
+
+	ld		a, #14
+	out		(P_PSG_REGS), a			// Select R#14
+	in		a, (P_PSG_STAT)			// Read R#14
+
+	and		#0x3F
+	ld		(de), a
+	inc		de
+
+	djnz	read_32tt_loop
+	jp		read_end
+
+read_37tt_loop: // 10.3 μs
+	ld		a, #15
+	out		(P_PSG_REGS), a			// Select R#15
+	ld		a, l
+	out		(P_PSG_DATA), a			// Set LOW
+	ld		a, h
+	out		(P_PSG_DATA), a			// Set HIGH
+
+	ld		a, #14
+	out		(P_PSG_REGS), a			// Select R#14
+	nop
+	in		a, (P_PSG_STAT)			// Read R#14
+
+	and		#0x3F
+	ld		(de), a
+	inc		de
+
+	djnz	read_37tt_loop
+	jp		read_end
+
+read_42tt_loop: // 11.7 μs
+	ld		a, #15
+	out		(P_PSG_REGS), a			// Select R#15
+	ld		a, l
+	out		(P_PSG_DATA), a			// Set LOW
+	ld		a, h
+	out		(P_PSG_DATA), a			// Set HIGH
+
+	ld		a, #14
+	out		(P_PSG_REGS), a			// Select R#14
+	nop
+	nop
+	in		a, (P_PSG_STAT)			// Read R#14
+
+	and		#0x3F
+	ld		(de), a
+	inc		de
+
+	djnz	read_42tt_loop
+	jp		read_end
+
+read_47tt_loop: // 13.1 μs
+	ld		a, #15
+	out		(P_PSG_REGS), a			// Select R#15
+	ld		a, l
+	out		(P_PSG_DATA), a			// Set LOW
+	ld		a, h
+	out		(P_PSG_DATA), a			// Set HIGH
+
+	ld		a, #14
+	out		(P_PSG_REGS), a			// Select R#14
+	nop
+	nop
+	nop
+	in		a, (P_PSG_STAT)			// Read R#14
+
+	and		#0x3F
+	ld		(de), a
+	inc		de
+
+	djnz	read_47tt_loop
+	jp		read_end
+
+read_52tt_loop: // 14.5 μs
+	ld		a, #15
+	out		(P_PSG_REGS), a			// Select R#15
+	ld		a, l
+	out		(P_PSG_DATA), a			// Set LOW
+	ld		a, h
+	out		(P_PSG_DATA), a			// Set HIGH
+
+	ld		a, #14
+	out		(P_PSG_REGS), a			// Select R#14
+	nop
+	nop
+	nop
+	nop
+	in		a, (P_PSG_STAT)			// Read R#14
+
+	and		#0x3F
+	ld		(de), a
+	inc		de
+
+	djnz	read_52tt_loop
+	jp		read_end
+
+read_end:
+
+	ei
+
+__endasm;
 }
 
 //-----------------------------------------------------------------------------
@@ -280,8 +513,41 @@ idle_detect_start:
 	ld		a, #14
 	out		(P_PSG_REGS), a			// Select R#14
 	in		a, (P_PSG_STAT)			// Read R#14
+	and		#0x3F
 
 __endasm;
+}
+
+//-----------------------------------------------------------------------------
+//
+void InitTextMode(const c8* title, const c8* footer)
+{
+	// Initialize screen
+	VDP_SetMode(VDP_MODE_TEXT2);
+	VDP_SetColor((u8)(COLOR_WHITE << 4 | COLOR_BLACK));
+	VDP_SetLineCount(VDP_LINE_212);
+	VDP_FillVRAM(0, 0x0000, 0, 80*27);
+	VDP_SetBlinkColor(0xE0);
+	VDP_SetInfiniteBlink();
+	VDP_CleanBlinkScreen();
+
+	// Initialize font
+	Print_SetTextFont(g_Font_MGL_Sample6, 0);
+	Print_SetColor(COLOR_WHITE, COLOR_BLACK);
+	Print_DrawTextAt(0, 0, MSX_GL" JSX Tool");
+	if (title)
+	{
+		Print_DrawText(" - ");
+		Print_DrawText(title);
+	}
+	Print_DrawLineH(0, 1, 80);
+
+	if (footer)
+	{
+		Print_DrawLineH(0, 24, 80);
+		Print_DrawTextAt(0, 25, footer);
+		VDP_SetBlinkLine(25);		
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -296,7 +562,13 @@ const c8* MenuAction_Start(u8 op, i8 value)
 			FSM_SetState(&g_StateDriver);
 			break;
 		case 1:
+			FSM_SetState(&g_StateDriverC);
+			break;
+		case 2:
 			FSM_SetState(&g_StateSniffer);
+			break;
+		case 3:
+			FSM_SetState(&g_StateDetect);
 			break;
 		};
 	}
@@ -304,23 +576,155 @@ const c8* MenuAction_Start(u8 op, i8 value)
 }
 
 //-----------------------------------------------------------------------------
+// 
+// INPUT_PORT1_HIGH			0b00010011
+void ComputePinValue()
+{
+	g_ReadPinValue[0] = 0;
+	g_ReadPinValue[1] = 0;
+
+	loop(i, 3)
+	{
+		switch(g_ReadPinConfig[i])
+		{
+		case PIN_LOW:
+			break;
+		case PIN_HIGH:
+			g_ReadPinValue[0] |= g_ReadPinBit[g_ReadPort][i];
+			g_ReadPinValue[1] |= g_ReadPinBit[g_ReadPort][i];
+			break;
+		case PIN_PULSE:
+			g_ReadPinValue[1] |= g_ReadPinBit[g_ReadPort][i];
+			break;
+		}
+	}
+
+	Print_SetPosition(50, 3);
+	Print_DrawBin8(g_ReadPinValue[0]);
+
+	Print_SetPosition(50, 4);
+	Print_DrawBin8(g_ReadPinValue[1]);
+}
+
+//-----------------------------------------------------------------------------
+// 
+const c8* MenuAction_Pin(u8 op, i8 value)
+{
+	value;
+	
+	switch(op)
+	{
+	case MENU_ACTION_SET:
+	case MENU_ACTION_INC:
+		g_ReadPinConfig[value]++;
+		if (g_ReadPinConfig[value] > 2)
+			g_ReadPinConfig[value] = 0;
+		ComputePinValue();
+		break;
+
+	case MENU_ACTION_DEC:
+		g_ReadPinConfig[value]--;
+		if (g_ReadPinConfig[value] == 255)
+			g_ReadPinConfig[value] = 2;
+		ComputePinValue();
+		break;
+
+	case MENU_ACTION_GET:
+		return g_ReadPinState[g_ReadPinConfig[value]];
+	};
+	return NULL;
+}
+
+//-----------------------------------------------------------------------------
+// 
+const c8* MenuAction_Read(u8 op, i8 value)
+{
+	value;
+
+	if (op == MENU_ACTION_SET) // Manages trigger button pressing
+	{
+		ReadInputData(g_ReadTiming);
+		loop(i, g_ReadCount)
+		{
+			Print_SetPosition(42, 6 + i);
+			Print_DrawInt(i);
+			Print_SetPosition(50, 6 + i);
+			Print_DrawBin8(g_Buffer[i]);
+		}
+	}
+	return NULL;
+}
+
+//-----------------------------------------------------------------------------
+// 
+const c8* MenuAction_Port(u8 op, i8 value)
+{
+	value;
+	
+	switch(op)
+	{
+	case MENU_ACTION_SET:
+	case MENU_ACTION_INC:
+	case MENU_ACTION_DEC:
+		g_ReadPort = 1 - g_ReadPort;
+		ComputePinValue();
+		break;
+
+	case MENU_ACTION_GET:
+		return g_ReadPort ? "2" : "1";
+	};
+	return NULL;
+}
+
+//-----------------------------------------------------------------------------
+// 
+const c8* MenuAction_Time(u8 op, i8 value)
+{
+	value;
+	
+	switch(op)
+	{
+	case MENU_ACTION_SET:
+	case MENU_ACTION_INC:
+		g_ReadTiming++;
+		if (g_ReadTiming >= READ_TIME_MAX - 1)
+			g_ReadTiming = 0;
+		break;
+
+	case MENU_ACTION_DEC:
+		g_ReadTiming--;
+		if (g_ReadTiming == 255)
+			g_ReadTiming = READ_TIME_MAX - 1;
+		break;
+
+	case MENU_ACTION_GET:
+		return g_ReadTimeText[g_ReadTiming];
+	};
+	return NULL;
+}
+
+//-----------------------------------------------------------------------------
+//
+void Menu_InitMain()
+{
+	InitTextMode(NULL, "Version " APP_VERSION);
+}
+
+//-----------------------------------------------------------------------------
+//
+void Menu_InitReader()
+{
+	Print_DrawLineV(39, 2, 22);
+	Print_DrawTextAt(42, 3, "From:");
+	Print_DrawTextAt(42, 4, "To:");
+
+	ComputePinValue();
+}
+
+//-----------------------------------------------------------------------------
 //
 void State_Menu_Init()
 {
-	VDP_SetMode(VDP_MODE_TEXT2);
-	VDP_SetColor(COLOR_WHITE << 4 | COLOR_BLACK);
-	VDP_SetLineCount(VDP_LINE_212);
-	VDP_FillVRAM(0, 0x0000, 0, 80*27);
-	VDP_SetBlinkColor(0xE0);
-	VDP_SetInfiniteBlink();
-	VDP_CleanBlinkScreen();
-
-	// Initialize font
-	Print_SetTextFont(g_Font_MGL_Sample6, 0);
-	Print_SetColor(COLOR_WHITE, COLOR_BLACK);
-	Print_DrawTextAt(0, 0, MSX_GL" JSX Tool");
-	Print_DrawLineH(0, 1, 80);
-
 	Menu_Initialize(g_Menus); // Initialize the menu
 	Menu_DrawPage(MENU_MAIN); // Display the first page
 }
@@ -340,21 +744,9 @@ void State_Menu_Update()
 //
 void State_Driver_Init()
 {
-	VDP_SetMode(VDP_MODE_TEXT2);
-	VDP_SetColor(COLOR_WHITE << 4 | COLOR_BLACK);
-	VDP_SetLineCount(VDP_LINE_212);
-	VDP_FillVRAM(0, 0x0000, 0, 80*27);
-	VDP_SetBlinkColor(0xE0);
-	VDP_SetInfiniteBlink();
-	VDP_CleanBlinkScreen();
+	InitTextMode("Driver (A)", "D:Detect. Esc:Menu");
 
-	// Initialize font
-	Print_SetTextFont(g_Font_MGL_Sample6, 0);
-	Print_SetColor(COLOR_WHITE, COLOR_BLACK);
-	Print_DrawTextAt(0, 0, MSX_GL" JSX Tool");
-	Print_DrawLineH(0, 1, 80);
 	Print_DrawLineV(39, 2, 22);
-	Print_DrawLineH(0, 24, 80);
 
 	loop(i, 2)
 	{
@@ -365,15 +757,15 @@ void State_Driver_Init()
 		Print_DrawHex8(id);
 
 		Print_DrawTextAt(2 + i * 40, 6, "Device:   ");
-		u8 dev = JSX_Detect(i);
+		u8 dev = JSX_Detect((i == 0) ? INPUT_PORT1 : INPUT_PORT2);
 		Print_DrawHex8(dev);
 		//  7 6 5 4 3 2 1 0
 		// –-–-–-–-–-–-–-–--
-		//  x x A A A A B B
+		//  0 0 A A A A B B
 		//      │ │ │ │ └─┴── Number of button rows (0-3)
 		//      └─┴─┴─┴────── Number of axis (0-15)
-		u8 axis = (dev >> 2) & 0xF;
-		u8 rows = dev & 0x3;
+		u8 axis = JSX_GetAxisNumber(dev);
+		u8 rows = JSX_GetRowsNumber(dev);
 
 		Print_DrawTextAt(2 + i * 40, 7, "Axis:     ");
 		Print_DrawInt(axis);
@@ -387,7 +779,7 @@ void State_Driver_Init()
 		Print_DrawInt(rows * 8);
 		Print_DrawText(")");
 
-		dev = JSX_Read(i, g_Buffer);
+		dev = JSX_Read((i == 0) ? INPUT_PORT1 : INPUT_PORT2, g_Buffer);
 		loop(j, axis + rows) 
 		{
 			if (j < axis)
@@ -406,9 +798,6 @@ void State_Driver_Init()
 			Print_DrawBin8(g_Buffer[i]);
 		}
 	}
-
-	Print_DrawTextAt(0, 25, "D:Detect. Esc:Menu");
-	VDP_SetBlinkLine(25);
 }
 
 //-----------------------------------------------------------------------------
@@ -423,6 +812,81 @@ void State_Driver_Update()
 
 	if(Keyboard_IsKeyPressed(KEY_D))
 		State_Driver_Init();
+}
+
+//-----------------------------------------------------------------------------
+//
+void State_DriverC_Init()
+{
+	InitTextMode("Driver (C)", "D:Detect. Esc:Menu");
+
+	Print_DrawLineV(39, 2, 22);
+
+	loop(i, 2)
+	{
+		Print_DrawTextAt(16 + i * 40, 3, (i == 0) ? "Port 1" : "Port 2");
+
+		Print_DrawTextAt(2 + i * 40, 5, "Idle ID:  ");
+		u8 id = GetIdleState(i);
+		Print_DrawHex8(id);
+
+		Print_DrawTextAt(2 + i * 40, 6, "Device:   ");
+		// u8 dev = JSXC_Detect((i == 0) ? INPUT_PORT1 : INPUT_PORT2);
+		u8 dev = JSXC_Read((i == 0) ? INPUT_PORT1 : INPUT_PORT2, g_Buffer);
+		Print_DrawHex8(dev);
+		//  7 6 5 4 3 2 1 0
+		// –-–-–-–-–-–-–-–--
+		//  0 0 A A A A B B
+		//      │ │ │ │ └─┴── Number of button rows (0-3)
+		//      └─┴─┴─┴────── Number of axis (0-15)
+		u8 axis = JSX_GetAxisNumber(dev);
+		u8 rows = JSX_GetRowsNumber(dev);
+
+		Print_DrawTextAt(2 + i * 40, 7, "Axis:     ");
+		Print_DrawInt(axis);
+		Print_DrawText(" (max:8)");
+		if (axis > 8)
+			axis = 8;
+
+		Print_DrawTextAt(2 + i * 40, 8, "Btn Rows: ");
+		Print_DrawInt(rows);
+		Print_DrawText(" (total:");
+		Print_DrawInt(rows * 8);
+		Print_DrawText(")");
+
+		// dev = JSXC_Read((i == 0) ? INPUT_PORT1 : INPUT_PORT2, g_Buffer);
+		loop(j, axis + rows) 
+		{
+			if (j < axis)
+			{
+				Print_DrawTextAt(2 + i * 40, j + 10, "Axis[");
+				Print_DrawInt(j);
+			}
+			else
+			{
+				Print_DrawTextAt(2 + i * 40, j +  11, "Rows[");
+				Print_DrawInt(j - axis);
+			}
+			Print_DrawText("]:  ");
+			Print_DrawInt(g_Buffer[i]);
+			Print_DrawText(" | ");
+			Print_DrawBin8(g_Buffer[i]);
+		}
+	}
+}
+
+//-----------------------------------------------------------------------------
+//
+void State_DriverC_Update()
+{
+	if(Keyboard_IsKeyPressed(KEY_ESC))
+	{
+		FSM_SetState(&g_StateMenu);
+		return;
+	}
+
+	if(Keyboard_IsKeyPressed(KEY_D))
+		State_DriverC_Init();
 }
 
 //-----------------------------------------------------------------------------
@@ -448,7 +912,7 @@ void State_Sniffer_Init()
 	Print_SetColor(COLOR_WHITE, COLOR_BLACK);
 
 	// Draw information
-	Print_DrawTextAt(0, 0, MSX_GL" JSX Tool");
+	Print_DrawTextAt(0, 0, MSX_GL" JSX Tool - Sniffer");
 	VDP_CommandLMMV(0, 12, SCREEN_W, 1, COLOR_GRAY, 0);
 
 	Print_SetColor(COLOR_MEDIUM_RED, COLOR_BLACK);
@@ -622,6 +1086,112 @@ void State_Sniffer_Update()
 	}
 
 	g_SampleCount++;
+}
+
+//-----------------------------------------------------------------------------
+//
+void State_Detect_Init()
+{
+	InitTextMode("MSX-HID", "D:Detect. Esc:Menu");
+
+	Print_DrawLineV(39, 2, 22);
+
+	loop(i, 2)
+	{
+		Print_DrawTextAt(16 + i * 40, 3, (i == 0) ? "Port 1" : "Port 2");
+
+		Print_DrawTextAt(2 + i * 40, 6, "HID:");
+		Print_DrawTextAt(2 + i * 40, 7, "Device:");
+
+		Print_DrawTextAt(2 + i * 40,  9, "Detect:");
+		Print_DrawTextAt(2 + i * 40, 10, "Device:");
+	}
+}
+
+u16 g_PrevID[2] = { 0, 0 };
+u8  g_PrevID8[2] = { 0, 0 };
+u8  g_DetectCount = 0;
+
+//-----------------------------------------------------------------------------
+//
+void Update_MSXHID(u8 i)
+{
+	u16 id = HID_Detect(i == 0 ? INPUT_PORT1 : INPUT_PORT2);
+	if (id != g_PrevID[i])
+	{
+		g_PrevID[i] = id;
+
+		Print_SetPosition(2 + 8 + i * 40, 6);
+		Print_DrawHex16(id);
+
+		const c8* dev = "Unknow       ";
+		switch(id)
+		{
+		case HID_DEVICE_JOYSTICK:	dev = "None/Joystick"; break;
+		case HID_DEVICE_MOUSE:		dev = "Mouse        "; break;
+		case HID_DEVICE_TRACKPAD:	dev = "Trackpad     "; break;
+		case HID_DEVICE_TOUCHPAD:	dev = "Touchpad     "; break;
+		case HID_DEVICE_VAUSPADDLE:	dev = "Vaus Paddle  "; break;
+		case HID_DEVICE_JOYMEGA:	dev = "JoyMega      "; break;
+		case HID_DEVICE_NINJATAP:	dev = "NinjaTap     "; break;
+		case HID_DEVICE_JSX_A0_B1:	dev = "JSX 0A/1B    "; break;
+		case HID_DEVICE_JSX_A2_B1:	dev = "JSX 2A/1B    "; break;
+		case HID_DEVICE_JSX_A6_B2:	dev = "JSX 6A/2B    "; break;
+		}
+
+		Print_SetPosition(2 + 8 + i * 40, 7);
+		Print_DrawText(dev);
+	}
+}
+
+//-----------------------------------------------------------------------------
+//
+void Update_Detect(u8 i)
+{
+	u8 id8 = Input_Detect(i == 0 ? INPUT_PORT1 : INPUT_PORT2);
+	if (id8 != g_PrevID8[i])
+	{
+		g_PrevID8[i] = id8;
+
+		Print_SetPosition(2 + 8 + i * 40, 9);
+		Print_DrawHex8(id8);
+
+		const c8* dev = "Unknow       ";
+		switch(id8)
+		{
+		case INPUT_TYPE_JOYSTICK:	dev = "None/Joystick"; break;
+		case INPUT_TYPE_MOUSE:		dev = "Mouse        "; break;
+		case INPUT_TYPE_TRACKBALL:	dev = "Trackpad     "; break;
+		case INPUT_TYPE_TOUCHPAD:	dev = "Touchpad     "; break;
+		case INPUT_TYPE_PADDLE:		dev = "Vaus Paddle  "; break;
+		case INPUT_TYPE_JOYMEGA:	dev = "JoyMega      "; break;
+		case INPUT_TYPE_NINJATAP:	dev = "NinjaTap     "; break;
+		}
+
+		Print_SetPosition(2 + 8 + i * 40, 10);
+		Print_DrawText(dev);
+	}
+}
+
+//-----------------------------------------------------------------------------
+//
+void State_Detect_Update()
+{
+	WaitVBlank();
+
+	switch(g_DetectCount++ & 0x03)
+	{
+	case 0: Update_MSXHID(0); break;
+	case 1: Update_MSXHID(1); break;
+	case 2: Update_Detect(0); break;
+	case 3: Update_Detect(1); break;
+	}
+
+	if(Keyboard_IsKeyPressed(KEY_ESC))
+	{
+		FSM_SetState(&g_StateMenu);
+		return;
+	}
 }
 
 //-----------------------------------------------------------------------------

@@ -116,7 +116,7 @@
 // - VDP_INIT_ON .................. Force option to be enable
 // - VDP_INIT_AUTO ................ Determining the best value for the context
 // - VDP_INIT_DEFAULT ............. Keep default value
-#define VDP_INIT_50HZ				VDP_INIT_ON
+#define VDP_INIT_50HZ				VDP_INIT_DEFAULT
 
 //-----------------------------------------------------------------------------
 // V9990  MODULE
@@ -148,16 +148,21 @@
 // Input module setting
 #define INPUT_USE_JOYSTICK			TRUE	// Add functions to handle joystick using I/O port
 #define INPUT_USE_KEYBOARD			TRUE	// Add functions to handle keyboard using I/O port
-#define INPUT_USE_MOUSE				FALSE	// Add support for Mouse handling functions
-#define INPUT_USE_PADDLE			FALSE	// Add functions to handle Arkanoid Vaus paddle through direct I/O access
-#define INPUT_USE_PADDLE_CALIB		FALSE	// Add functions paddle calibration feature
-#define INPUT_USE_DETECT			FALSE	// Add feature to detect device plugged in General purpose ports
+#define INPUT_USE_MOUSE				TRUE	// Add support for Mouse handling functions
+#define INPUT_USE_DETECT			TRUE	// Add feature to detect device plugged in General purpose ports
 #define INPUT_USE_ISR_PROTECTION	TRUE	// Disable interruptions while access PSG registers (needed if you use BIOS or access PSG in your own ISR)
 #define INPUT_JOY_UPDATE			FALSE	// Add function to update all joystick states at once
 // Key update handler
 #define INPUT_KB_UPDATE				FALSE	// Add function to update all keyboard rows at once
 #define INPUT_KB_UPDATE_MIN			0		// First row to update
 #define INPUT_KB_UPDATE_MAX			8		// Last row to update (10 for numerical-pad, 8 otherwise)
+
+//-----------------------------------------------------------------------------
+// PADDLE MODULE
+//-----------------------------------------------------------------------------
+
+// Paddle module setting
+#define PADDLE_USE_CALIB			TRUE	// Add functions paddle calibration feature
 
 //-----------------------------------------------------------------------------
 // MEMORY MODULE
@@ -205,7 +210,7 @@
 #define PRINT_USE_2_PASS_FX			FALSE	// [Bitmap] Allow use 2-pass FX render to prevent character overlap
 #define PRINT_USE_GRAPH				TRUE	// Allow use of character lines and boxes
 #define PRINT_USE_VALIDATOR			TRUE	// Add validator character code
-#define PRINT_USE_UNIT				TRUE	// Display integer type (h: hexadecimal, b: binary)
+#define PRINT_USE_UNIT				FALSE	// Display integer type (h: hexadecimal, b: binary)
 #define PRINT_USE_FORMAT			FALSE	// Add printf type function
 #define PRINT_USE_32B				FALSE	// Allow to print 32-bits integers
 #define PRINT_SKIP_SPACE			FALSE	// Skill space character

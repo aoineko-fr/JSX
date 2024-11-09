@@ -28,10 +28,10 @@ ProjName = "jsx";
 ProjModules = [ "main" ];
 
 //-- Project segments base name (string). ProjName will be used if not defined
-// ProjSegments = "";
+ProjSegments = "main";
 
 //-- List of library modules to build (array)
-LibModules = [ "device/jsx", "fsm", "game_menu", "vdp", "print", "input", "memory" ];
+LibModules = [ "device/jsx", "device/msx-hid", "fsm", "game_menu", "vdp", "print", "input", "memory" ];
 
 //-- Additional sources to be compiled and linked with the project (array)
 // AddSources = [];
@@ -133,10 +133,10 @@ AppID = "EX";
 //*******************************************************************************
 
 //-- Force to generate MSXgl static library even if 'msxgl.lib' already exist (boolean)
-// BuildLibrary = false;
+// 	 = false;
 
 //-- Prepare program for debug (boolean)
-// Debug = false;
+Debug = false;
 
 //-- Move debug symbols to deployement folder (boolean)
 // DebugSymbols = false;
