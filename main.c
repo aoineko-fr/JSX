@@ -21,7 +21,7 @@
 
 // Library's logo
 #define MSX_GL			"\x01\x02\x03\x04\x05\x06"
-#define APP_VERSION		"0.7"
+#define APP_VERSION		"0.8"
 #define SCREEN_W		512
 #define OUTPUT_Y		18
 #define INPUT_Y			95
@@ -156,11 +156,11 @@ enum PIN_STATE
 
 enum READ_TIME
 {
-	READ_TIME_32TT = 0,
-	READ_TIME_37TT,
-	READ_TIME_42TT,
-	READ_TIME_47TT,
-	READ_TIME_52TT,
+	READ_TIME_32TS = 0,
+	READ_TIME_37TS,
+	READ_TIME_42TS,
+	READ_TIME_47TS,
+	READ_TIME_52TS,
 	READ_TIME_MAX,
 };
 
@@ -173,11 +173,11 @@ const u8* g_ReadPinState[PIN_MAX] =
 
 const u8* g_ReadTimeText[READ_TIME_MAX] = 
 {
-	"32 TT (8.9 us)",
-	"37 TT (10.3 us)",
-	"42 TT (11.7 us)",
-	"47 TT (13.1 us)",
-	"52 TT (14.5 us)",
+	"32 ts (8.9 us)",
+	"37 ts (10.3 us)",
+	"42 ts (11.7 us)",
+	"47 ts (13.1 us)",
+	"52 ts (14.5 us)",
 };
 
 const u8 g_ReadPinBit[2][3] = 
@@ -301,13 +301,13 @@ __asm
 	jp		(iy)
 
 read_jump_table:
-	jr		read_32tt_loop
-	jr		read_37tt_loop
-	jr		read_42tt_loop
-	jr		read_47tt_loop
-	jr		read_52tt_loop
+	jr		read_32ts_loop
+	jr		read_37ts_loop
+	jr		read_42ts_loop
+	jr		read_47ts_loop
+	jr		read_52ts_loop
 
-read_32tt_loop: // 8.9 μs
+read_32ts_loop: // 8.9 μs
 	ld		a, #15
 	out		(P_PSG_REGS), a			// Select R#15
 	ld		a, l
@@ -323,10 +323,10 @@ read_32tt_loop: // 8.9 μs
 	ld		(de), a
 	inc		de
 
-	djnz	read_32tt_loop
+	djnz	read_32ts_loop
 	jp		read_end
 
-read_37tt_loop: // 10.3 μs
+read_37ts_loop: // 10.3 μs
 	ld		a, #15
 	out		(P_PSG_REGS), a			// Select R#15
 	ld		a, l
@@ -343,10 +343,10 @@ read_37tt_loop: // 10.3 μs
 	ld		(de), a
 	inc		de
 
-	djnz	read_37tt_loop
+	djnz	read_37ts_loop
 	jp		read_end
 
-read_42tt_loop: // 11.7 μs
+read_42ts_loop: // 11.7 μs
 	ld		a, #15
 	out		(P_PSG_REGS), a			// Select R#15
 	ld		a, l
@@ -364,10 +364,10 @@ read_42tt_loop: // 11.7 μs
 	ld		(de), a
 	inc		de
 
-	djnz	read_42tt_loop
+	djnz	read_42ts_loop
 	jp		read_end
 
-read_47tt_loop: // 13.1 μs
+read_47ts_loop: // 13.1 μs
 	ld		a, #15
 	out		(P_PSG_REGS), a			// Select R#15
 	ld		a, l
@@ -386,10 +386,10 @@ read_47tt_loop: // 13.1 μs
 	ld		(de), a
 	inc		de
 
-	djnz	read_47tt_loop
+	djnz	read_47ts_loop
 	jp		read_end
 
-read_52tt_loop: // 14.5 μs
+read_52ts_loop: // 14.5 μs
 	ld		a, #15
 	out		(P_PSG_REGS), a			// Select R#15
 	ld		a, l
@@ -409,7 +409,7 @@ read_52tt_loop: // 14.5 μs
 	ld		(de), a
 	inc		de
 
-	djnz	read_52tt_loop
+	djnz	read_52ts_loop
 	jp		read_end
 
 read_end:
@@ -600,9 +600,13 @@ void ComputePinValue()
 	}
 
 	Print_SetPosition(50, 3);
+	Print_DrawHex8(g_ReadPinValue[0]);
+	Print_DrawText(" | ");
 	Print_DrawBin8(g_ReadPinValue[0]);
 
 	Print_SetPosition(50, 4);
+	Print_DrawHex8(g_ReadPinValue[1]);
+	Print_DrawText(" | ");
 	Print_DrawBin8(g_ReadPinValue[1]);
 }
 
@@ -649,6 +653,8 @@ const c8* MenuAction_Read(u8 op, i8 value)
 			Print_SetPosition(42, 6 + i);
 			Print_DrawInt(i);
 			Print_SetPosition(50, 6 + i);
+			Print_DrawHex8(g_Buffer[i]);
+			Print_DrawText(" | ");
 			Print_DrawBin8(g_Buffer[i]);
 		}
 	}

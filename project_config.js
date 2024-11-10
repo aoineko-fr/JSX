@@ -123,7 +123,7 @@ AppSignature = true;
 AppCompany = "GL";
 
 //-- Application ID. Can be 2 character string or 16-bits integer (0~65535)
-AppID = "EX";
+AppID = "JX";
 
 //-- Application extra data (array). Comma-separated bytes starting with data size
 // AppExtra = [];
@@ -133,7 +133,7 @@ AppID = "EX";
 //*******************************************************************************
 
 //-- Force to generate MSXgl static library even if 'msxgl.lib' already exist (boolean)
-// 	 = false;
+// BuildLibrary	 = false;
 
 //-- Prepare program for debug (boolean)
 Debug = false;
